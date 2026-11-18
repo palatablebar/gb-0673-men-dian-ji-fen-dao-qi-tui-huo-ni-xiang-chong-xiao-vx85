@@ -2,7 +2,7 @@ from copy import deepcopy
 from app.coerce import instant
 from app.reasons import reject
 
-def replay(rows,lots,as_of):
+def replay(rows,lots,as_of,tiebreak=None):
     live={r['id']:dict(r,remaining=0) for r in lots};spends={};refunds=[];ledger=[];errors=[];expired=0
     priority={'EARN':0,'SPEND':1,'REFUND':2}
     def expire(at):
@@ -11,7 +11,9 @@ def replay(rows,lots,as_of):
             if instant(lot['expires'])<=at and lot['remaining']:
                 amount=lot['remaining'];lot['remaining']=0;expired+=amount
                 ledger.append({'id':lot['id'],'member':lot['member'],'action':'EXPIRE','points':amount,'at':at.isoformat()})
-    for row in sorted(rows,key=lambda r:(instant(r['at']),priority[r['type']],r['id'])):
+    def order_key(r):
+        return (instant(r['at']),priority[r['type']],tiebreak(r) if tiebreak else 0,r['id'])
+    for row in sorted(rows,key=order_key):
         at=instant(row['at']);expire(at);member=row['member'];amount=row['points']
         if row['type']=='EARN':
             live[row['id']]['remaining']=amount;ledger.append({'id':row['id'],'member':member,'action':'EARN','points':amount,'at':row['at']});continue

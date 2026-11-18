@@ -1,12 +1,30 @@
 from importlib import import_module
 from pathlib import Path
 from copy import deepcopy
-import json, time, base64
+import json, time, base64, csv, io
 from app.config import ROOT, MODULES, MAX_BYTES
 from app.errors import BusinessError
 from app.manifest import digest, make_manifest
 
-def evaluate(payload=None, until=7, snapshot=None):
+
+def _coerce_backfill(payload):
+    """补传事件既可传结构化列表，也可传同样表头的 CSV 文本。"""
+    if 'backfill_csv' in payload:
+        text=str(payload['backfill_csv'])
+        if len(text.encode())>MAX_BYTES: raise BusinessError('TOO_LARGE','补传内容超过2MB',413)
+        try:
+            rows=list(csv.DictReader(io.StringIO(text,newline='')))
+        except csv.Error:
+            raise BusinessError('BAD_BACKFILL','补传CSV无法解析')
+        return rows
+    backfill=payload.get('backfill',[])
+    if backfill is None: backfill=[]
+    if not isinstance(backfill,list): raise BusinessError('BAD_BACKFILL','补传事件须为列表')
+    if len(json.dumps(backfill,ensure_ascii=False).encode())>MAX_BYTES: raise BusinessError('TOO_LARGE','补传内容超过2MB',413)
+    return backfill
+
+
+def evaluate(payload=None, until=None, snapshot=None):
     payload=payload or {}
     dataset=payload.get('dataset','dirty')
     if dataset not in {'dirty','clean','legacy'}: raise BusinessError('BAD_DATASET','样例名称无效')
@@ -15,12 +33,15 @@ def evaluate(payload=None, until=7, snapshot=None):
     if len(raw)>MAX_BYTES: raise BusinessError('TOO_LARGE','文件超过2MB',413)
     context=deepcopy(snapshot['context']) if snapshot is not None else json.loads((ROOT/'sample_data/context.json').read_text())
     context.update(deepcopy(payload.get('overrides',{})))
+    backfill=deepcopy(snapshot.get('backfill',[])) if snapshot is not None else _coerce_backfill(payload)
+    if until is None: until=len(MODULES)
     start=time.perf_counter()
-    state={'raw_bytes':raw,'context':context,'records':[],'quarantine':[], 'counts':{},'views':{},'source':dataset}
+    state={'raw_bytes':raw,'context':context,'records':[],'quarantine':[], 'counts':{},'views':{},'source':dataset,
+           'backfill_input':backfill,'backfill_duplicates':0}
     for index,key in enumerate(MODULES,1):
         if index>until: break
         import_module(f'app.modules.{key}.rules').apply(state)
-    state['input_snapshot']={'bytes_b64':base64.b64encode(raw).decode(),'context':deepcopy(context)}
+    state['input_snapshot']={'bytes_b64':base64.b64encode(raw).decode(),'context':deepcopy(context),'backfill':deepcopy(backfill)}
     state.pop('raw_bytes',None)
-    state['manifest']=make_manifest(digest(raw,context),dataset,time.perf_counter()-start)
+    state['manifest']=make_manifest(digest(raw,context,backfill),dataset,time.perf_counter()-start)
     return state

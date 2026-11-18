@@ -13,6 +13,7 @@
 | M5 退货回拨 | 执行并复核退货回拨 | `POST /api/refund` | `app/modules/refund/rules.py` | `tests/test_refund.py` |
 | M6 余额对账 | 执行并复核余额对账 | `POST /api/reconcile` | `app/modules/reconcile/rules.py` | `tests/test_reconcile.py` |
 | M7 期末归档 | 执行并复核期末归档 | `POST /api/archive` | `app/modules/archive/rules.py` | `tests/test_archive.py` |
+| M8 补传发布 | 处理门店断网补传并发布余额 | `POST /api/backfill` | `app/modules/backfill/rules.py` | `tests/test_backfill.py`、`tests/test_publish.py` |
 
 ## 陷阱登记
 
@@ -29,6 +30,10 @@
 | TRAP-11 | UTC归一 | 静默错算或证据丢失 | 以可复核规则显式处理 | `app/modules/policy/rules.py` | `tests/test_policy.py::test_utc_real` |
 | TRAP-06 | 全角积分 | 静默错算或证据丢失 | 以可复核规则显式处理 | `app/modules/policy/rules.py` | `tests/test_policy.py::test_fullwidth_points` |
 | TRAP-23 | 权益半开窗 | 静默错算或证据丢失 | 以可复核规则显式处理 | `app/modules/policy/rules.py` | `tests/test_policy.py::test_rule_end_exclusive` |
+
+## 补传发布规则
+
+门店断网时已按本地余额扣点，恢复后补传。补传消费在相同时刻先于线上事件占用批次，承认顾客已在门店完成的付款；补传占用批次后线上订单若整笔无法再落账，标记为受影响订单并保留待核，不静默作废也不重复承认。受影响订单与余额不足的补传订单，其积分从可发布余额中冻结：冻结超出账上可用时该会员标记待核不发布，发布时沿用旧余额。同一补传编号重复投递按编号去重，同号不同原值冲突隔离，重跑不新增扣减。发布为整批事务，失败回滚，上一次发布余额继续生效。`POST /api/runs/{run_id}/publish` 提交发布。本次不处理补传退款、账户合并或其他补传批次。
 
 ## 对账规则
 

@@ -44,6 +44,13 @@ def review(run_id:str,payload:dict=Body(...)):
     revision=payload.get('revision')
     if not isinstance(revision,int) or revision<1: raise BusinessError('BAD_REVISION','版本号须为正整数')
     return store.review(DB_PATH,run_id,revision)
+@app.post('/api/runs/{run_id}/publish')
+def publish(run_id:str,payload:dict=Body(default={})):
+    result=store.get(DB_PATH,run_id)
+    revision=payload.get('revision')
+    if revision is not None and revision!=result['revision']:
+        raise BusinessError('STALE_VERSION','复核版本已更新，请刷新',409)
+    return store.publish(DB_PATH,result)
 @app.get('/api/export/{run_id}')
 def export(run_id:str):
     result=store.get(DB_PATH,run_id)

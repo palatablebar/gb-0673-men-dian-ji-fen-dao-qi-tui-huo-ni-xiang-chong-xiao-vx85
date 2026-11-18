@@ -1,0 +1,77 @@
+{% extends 'base.html' %}{% block content %}
+<section class="panel primary-panel">
+  <div class="panel__head"><h2>会员可发布余额</h2><span>{{ view.metrics['会员数'] }} 户 · 发布后合计 {{ view.metrics['可发布余额'] }}</span></div>
+  <div class="cells"><table>
+    <thead><tr><th class="row-number">#</th><th>会员号</th><th>正式余额</th><th>原余额</th><th>冻结待核</th><th>可发布余额</th><th>状态</th><th>受影响订单</th><th>待核原因</th></tr></thead>
+    <tbody>
+    {% for row in view.rows %}
+      <tr class="{% if row.deficit %}row-bad{% elif row.pending_orders %}row-warn{% endif %}">
+        <td class="row-number">{{ loop.index }}</td>
+        <td>{{ row.member }}</td>
+        <td>{{ row.ledger_remaining }}</td>
+        <td>{{ row.prior_remaining }}</td>
+        <td>{{ row.frozen }}</td>
+        <td><b>{{ row.publishable_remaining }}</b>{% if row.blocked %} <span class="tag">保留旧余额</span>{% endif %}</td>
+        <td>{{ row.status }}{% if row.deficit %} · 冻结超出 {{ row.deficit }}{% endif %}</td>
+        <td>{{ row.affected_orders|join('、') if row.affected_orders else '—' }}</td>
+        <td class="wrap">{{ row.pending_reasons|join('；') if row.pending_reasons else '—' }}</td>
+      </tr>
+    {% else %}<tr><td>无会员。</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>受影响订单</h2><span>{{ view.metrics['受影响订单'] }} 单</span></div>
+    <div class="cells"><table><thead><tr><th class="row-number">#</th><th>订单</th><th>会员</th><th>积分</th><th>类型</th><th>触发补传</th><th>原因</th></tr></thead><tbody>
+      {% for e in state.backfill.affected %}
+      <tr class="{% if e.kind=='DISPLACED' %}row-bad{% endif %}"><td class="row-number">{{ loop.index }}</td><td>{{ e.order }}</td><td>{{ e.member }}</td><td>{{ e.points }}</td><td>{{ e.kind }}</td><td>{{ e.caused_by|join('、') if e.caused_by else '—' }}</td><td class="wrap">{{ e.detail }}</td></tr>
+      {% else %}<tr><td>迟到补传未改变任何已落账订单。</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>待核订单</h2><span>{{ view.metrics['待核订单'] }} 单</span></div>
+    <div class="cells"><table><thead><tr><th class="row-number">#</th><th>订单</th><th>会员</th><th>积分</th><th>渠道</th><th>原因码</th><th>说明</th></tr></thead><tbody>
+      {% for e in state.backfill.pending %}
+      <tr><td class="row-number">{{ loop.index }}</td><td>{{ e.order }}</td><td>{{ e.member }}</td><td>{{ e.points }}</td><td>{{ e.channel }}</td><td>{{ e.kind }}</td><td class="wrap">{{ e.detail }}</td></tr>
+      {% else %}<tr><td>没有待核订单。</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>发布</h2><span>{{ '可发布' if state.backfill.can_publish else '存在阻断' }}</span></div>
+    <div class="publish">
+      <p>发布为整批事务：同一批次重跑只覆盖本批快照，不新增扣减；发布失败或中断时上一次已发布余额继续生效。被待核阻断的会员保留旧余额。</p>
+      <p>守恒：发放 {{ state.backfill.combined.issued }} = 可用 {{ state.backfill.combined.remaining }} + 消费 {{ state.backfill.combined.spent }} − 退款 {{ state.backfill.combined.refunded }} + 到期 {{ state.backfill.combined.expired }} · {{ '通过' if state.backfill.points_balanced else '未通过' }}</p>
+      <p>去重 {{ state.backfill.duplicates }} 行 · 已采纳补传 {{ state.backfill.honored_backfill|length }} 单 · 隔离 {{ state.backfill.rejected|length }} 行</p>
+      <button id="publish" {% if not state.backfill.can_publish %}disabled{% endif %}>确认发布</button>
+      <output id="publish-result" aria-live="polite"></output>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>补传隔离</h2><span>{{ state.backfill.rejected|length }} 行</span></div>
+    {{ cells(state.backfill.rejected) }}
+  </section>
+</div>
+
+<div class="grid">
+  <section class="panel">
+    <div class="panel__head"><h2>已发布余额</h2><span>本批次发布记录</span></div>
+    <div class="cells"><table><thead><tr><th class="row-number">#</th><th>批次</th><th>会员</th><th>发布余额</th><th>冻结</th><th>发布前</th><th>状态</th><th>时间</th></tr></thead><tbody>
+      {% for p in publication %}
+      <tr><td class="row-number">{{ loop.index }}</td><td>{{ p.run_id }}</td><td>{{ p.member }}</td><td><b>{{ p.publishable_remaining }}</b></td><td>{{ p.frozen }}</td><td>{{ p.previous_remaining if p.previous_remaining is not none else '—' }}</td><td>{{ p.status }}</td><td>{{ p.created_at }}</td></tr>
+      {% else %}<tr><td>尚未发布。</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel__head"><h2>导入补传</h2><span>CSV 或粘贴</span></div>
+    <details class="source-input" open><summary>门店补传事件</summary>
+      <textarea id="backfill-text" aria-label="补传CSV" placeholder="id,member,type,points,at,expires,ref,rule,version">{{ backfill_text }}</textarea>
+      <button id="import-backfill">按补传重算</button>
+    </details>
+  </section>
+</div>
+{% endblock %}

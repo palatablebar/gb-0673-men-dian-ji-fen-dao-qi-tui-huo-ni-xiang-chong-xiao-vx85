@@ -6,3 +6,28 @@ if(filePicker){
  document.querySelector('#import-csv').addEventListener('click',async event=>{event.target.disabled=true;try{const response=await fetch('/api/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({csv_text:editor.value})});const data=await response.json();if(!response.ok)throw Error(data.detail);location.href=location.pathname+'?run_id='+data.manifest.run_id;}catch(e){editor.setCustomValidity(e.message);editor.reportValidity();}finally{event.target.disabled=false;}});
  editor.addEventListener('input',()=>editor.setCustomValidity(''));
 }
+const publishButton=document.querySelector('#publish');
+if(publishButton){
+ const result=document.querySelector('#publish-result');
+ const backfillEditor=document.querySelector('#backfill-text');
+ publishButton.addEventListener('click',async()=>{
+   publishButton.disabled=true;result.textContent='发布中…';
+   try{
+     const response=await fetch('/api/runs/'+document.body.dataset.runId+'/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+     const data=await response.json();
+     if(!response.ok)throw Error(data.detail);
+     result.textContent='已发布 '+data.length+' 户，可发布余额合计 '+data.reduce((n,p)=>n+p.publishable_remaining,0);
+     location.reload();
+   }catch(e){result.textContent=e.message;publishButton.disabled=false;}
+ });
+ document.querySelector('#import-backfill').addEventListener('click',async event=>{
+   event.target.disabled=true;result.textContent='重算中…';
+   try{
+     const body={dataset:document.body.dataset.source,backfill_csv:backfillEditor.value};
+     const response=await fetch('/api/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+     const data=await response.json();
+     if(!response.ok)throw Error(data.detail);
+     location.href='/backfill?run_id='+data.manifest.run_id;
+   }catch(e){result.textContent=e.message;event.target.disabled=false;}
+ });
+}

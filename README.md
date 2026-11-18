@@ -2,7 +2,7 @@
 
 给连锁零售会员运营专员使用。消费先用最早到期批次；退款按原消费分配逆向恢复，已过期部分不得复活。
 
-七个业务模块：事件采信、权益规则、积分归批、消费到期、退货回拨、余额对账、期末归档。
+七个业务模块：事件采信、权益规则、积分归批、消费到期、退货回拨、余额对账、期末归档。另设第八个模块“补传发布”，处理门店断网补传：先承认门店已扣积分，被挤出的线上订单标记受影响并待核，再发布可发布会员余额。
 
 ```sh
 docker compose up --build -d
@@ -11,7 +11,7 @@ docker compose exec -T app pytest -q
 
 访问 http://localhost:18242 。启动直接载入现场脏批。切换干净样例和旧编码样例可对照核验。会员00001两批积分100和80，消费120后退款30，其中20恢复、10已过期不恢复；再消费50后余额30。整批发放1580、余额1010、消费730、退款170、到期10，守恒可复核。
 
-各模块页面对应 `/<模块英文名>`，各模块执行入口为 `POST /api/<模块英文名>`，不传参即可独立演示。完整运行 `POST /api/runs` 支持 `dataset`（dirty/clean/legacy）、`csv_text` 与 `overrides` 参数。批次历史 `GET /api/runs`，详情 `GET /api/runs/{run_id}`。
+各模块页面对应 `/<模块英文名>`，各模块执行入口为 `POST /api/<模块英文名>`，不传参即可独立演示。完整运行 `POST /api/runs` 支持 `dataset`（dirty/clean/legacy）、`csv_text`、`overrides` 与门店补传 `backfill`（事件列表）或 `backfill_csv`；补传样例见 `sample_data/backfill.csv`。批次历史 `GET /api/runs`，详情 `GET /api/runs/{run_id}`。补传页 `/backfill` 按会员列出正式余额、可发布余额、受影响订单与待核原因；发布入口 `POST /api/runs/{run_id}/publish`。
 
 同输入与规则版本生成相同批号，只保留一条批次。复核入口 `POST /api/runs/{run_id}/review` 提交当前 `revision`，陈旧提交409。归档包只有一个下载入口 `GET /api/export/{run_id}`，含证据和运行摘要。原始隔离在页面同屏显示。
 
